@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -300,5 +301,42 @@ func TestDeleteUserNotFoundHTTP(t *testing.T) {
 	deleteUser(rec, req, NewUserStore())
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %v", rec.Code)
+	}
+}
+
+func TestConcurrentAddUser(t *testing.T) {
+	var wg sync.WaitGroup
+	store := NewUserStore()
+	ch := make(chan int, 1000)
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			user, err := store.AddUser("Alex", 25)
+			defer wg.Done()
+			if err != nil {
+				t.Errorf("expected nil, got %v", err)
+				ch <- -1
+				return
+			}
+			ch <- user.ID
+		}()
+	}
+	wg.Wait()
+	check := make(map[int]bool, 1000)
+	for i := 0; i < 1000; i++ {
+		index := <-ch
+		if index == -1 {
+			t.Errorf("invalid error in AddUser")
+			return
+		}
+		if check[index] {
+			t.Errorf("duplicate ID: %d", index)
+			return
+		}
+		check[index] = true
+	}
+	count := len(store.users)
+	if count != 1000 {
+		t.Errorf("expected 1000 users, got %d", count)
 	}
 }

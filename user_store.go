@@ -1,6 +1,9 @@
 package main
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 var (
 	ErrUserNotFound = errors.New("user not found")
@@ -17,6 +20,7 @@ type User struct {
 type UserStore struct {
 	users  map[int]User
 	nextID int
+	mu     sync.RWMutex
 }
 
 func NewUserStore() *UserStore {
@@ -33,6 +37,8 @@ func (s *UserStore) AddUser(name string, age int) (User, error) {
 	if age < 0 {
 		return User{}, ErrInvalidAge
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	user := User{ID: s.nextID, Name: name, Age: age}
 	s.users[s.nextID] = user
 	s.nextID++
@@ -40,6 +46,8 @@ func (s *UserStore) AddUser(name string, age int) (User, error) {
 }
 
 func (s *UserStore) GetUser(id int) (User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if value, ok := s.users[id]; ok {
 		return value, nil
 	}
@@ -47,6 +55,8 @@ func (s *UserStore) GetUser(id int) (User, error) {
 }
 
 func (s *UserStore) DeleteUser(id int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.users[id]; !ok {
 		return ErrUserNotFound
 	}
@@ -55,14 +65,16 @@ func (s *UserStore) DeleteUser(id int) error {
 }
 
 func (s *UserStore) UpdateUser(id int, name string, age int) (User, error) {
-	if _, ok := s.users[id]; !ok {
-		return User{}, ErrUserNotFound
-	}
 	if name == "" {
 		return User{}, ErrInvalidName
 	}
 	if age < 0 {
 		return User{}, ErrInvalidAge
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.users[id]; !ok {
+		return User{}, ErrUserNotFound
 	}
 	user := User{ID: id, Name: name, Age: age}
 	s.users[id] = user
